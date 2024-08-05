@@ -16,7 +16,7 @@ const login = (req: Request, res: Response, next: NextFunction) => {
   return User.findUserByCredentials(email, password)
     .then((user) => {
       const token = jwt.sign({ _id: user._id }, JWT_SECRET);
-      return res.status(200).send(token);
+      return res.send({ token });
     })
     .catch(next);
 };
