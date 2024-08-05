@@ -11,10 +11,6 @@
   },
   "author": "Daniil Lyaschenko",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/danil2703/mesto-api/issues"
-  },
-  "homepage": "https://github.com/danil2703/mesto-api#readme",
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/cookie-parser": "^1.4.7",
