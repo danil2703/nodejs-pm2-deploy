@@ -1,14 +1,11 @@
-import {
-  Router, Request, Response, NextFunction,
-} from 'express';
-import userRouter from './users';
-import cardRouter from './cards';
-import auth from '../middlewares/auth';
-import NotFoundError from '../errors/not-found-error';
-import {
-  createUser, login,
-} from '../controllers/users';
-import { validateUserBody, validateAuthentication } from '../middlewares/validatons';
+import { Router } from 'express';
+import { celebrate } from 'celebrate';
+import { createUserSchema, loginSchema } from '../validators/users';
+import { createUser, login } from '../controllers/users';
+import authMiddleware from '../middlewares/auth';
+import cardsRouter from './cards';
+import usersRouter from './users';
+import routeNotFound from '../middlewares/route-not-found';
 
 const router = Router();
 
@@ -18,16 +15,13 @@ router.get('/crash-test', () => {
   }, 0);
 });
 
-router.post('/signup', validateUserBody, createUser);
-router.post('/signin', validateAuthentication, login);
+router.post('/signin', celebrate(loginSchema), login);
+router.post('/signup', celebrate(createUserSchema), createUser);
 
-// все роуты, кроме /signin и /signup, защищены авторизацией;
-router.use(auth);
-router.use('/users', userRouter);
-router.use('/cards', cardRouter);
+router.use(authMiddleware);
 
-router.use((req: Request, res: Response, next: NextFunction) => {
-  next(new NotFoundError('Маршрут не найден'));
-});
+router.use('/cards', cardsRouter);
+router.use('/users', usersRouter);
+router.use('*', routeNotFound);
 
 export default router;

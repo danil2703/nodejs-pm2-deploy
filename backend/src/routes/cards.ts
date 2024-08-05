@@ -1,19 +1,16 @@
 import { Router } from 'express';
-import { validateObjId, validateCardBody } from '../middlewares/validatons';
+import { celebrate } from 'celebrate';
+import {
+  createCard, deleteCard, dislikeCard, getCards, likeCard,
+} from '../controllers/cards';
+import { createCardSchema, deleteOrLikeCardSchema } from '../validators/cards';
 
-const router = Router();
-const {
-  createCard,
-  getCards,
-  deleteCard,
-  likeCard,
-  dislikeCard,
-} = require('../controllers/cards');
+const cardsRouter = Router();
 
-router.get('/', getCards);
-router.post('/', validateCardBody, createCard);
-router.delete('/:id', validateObjId, deleteCard);
-router.put('/:id/likes', validateObjId, likeCard);
-router.delete('/:id/likes', validateObjId, dislikeCard);
+cardsRouter.get('/', getCards);
+cardsRouter.post('/', celebrate(createCardSchema), createCard);
+cardsRouter.delete('/:cardId', celebrate(deleteOrLikeCardSchema), deleteCard);
+cardsRouter.put('/:cardId/likes', celebrate(deleteOrLikeCardSchema), likeCard);
+cardsRouter.delete('/:cardId/likes', celebrate(deleteOrLikeCardSchema), dislikeCard);
 
-export default router;
+export default cardsRouter;

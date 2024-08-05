@@ -1,14 +1,16 @@
 import { Router } from 'express';
+import { celebrate } from 'celebrate';
 import {
-  getUser, updateUserInfo, updateUserAvatar, getCurrentUser,
+  getCurrentUser, getUserById, getUsers, updateAvatar, updateUser,
 } from '../controllers/users';
-import { validateObjId, validateAvatar, validateProfile } from '../middlewares/validatons';
+import { getUserByIdSchema, updateAvatarSchema, updateUserSchema } from '../validators/users';
 
-const router = Router();
+const usersRouter = Router();
 
-router.get('/me', getCurrentUser);
-router.get('/:id', validateObjId, getUser);
-router.patch('/me/avatar', validateAvatar, updateUserAvatar);
-router.patch('/me', validateProfile, updateUserInfo);
+usersRouter.get('/', getUsers);
+usersRouter.get('/me', getCurrentUser);
+usersRouter.get('/:userId', celebrate(getUserByIdSchema), getUserById);
+usersRouter.patch('/me', celebrate(updateUserSchema), updateUser);
+usersRouter.patch('/me/avatar', celebrate(updateAvatarSchema), updateAvatar);
 
-export default router;
+export default usersRouter;
