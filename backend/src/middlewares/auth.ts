@@ -1,30 +1,27 @@
-import { NextFunction, Response, Request } from 'express';
 import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction } from 'express';
+import { JWT_SECRET } from '../config';
 import UnauthorizedError from '../errors/unauthorized-error';
-import { JWT_SECRET } from '../environments';
 
-const authMiddleware = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const token = req.cookies.jwt;
+interface JwtPayload {
+  _id: string
+}
 
-  if (!token) {
-    return next(new UnauthorizedError('Необходима авторизация.'));
-  }
-
-  let payload;
-
+const auth = (req: Request, res: Response, next: NextFunction) => {
   try {
-    payload = jwt.verify(token, JWT_SECRET);
-  } catch (err) {
-    return next(new UnauthorizedError('С токеном что-то не так.'));
+    let token = req.cookies.jwt || req.headers.authorization;
+    if (!token) {
+      throw new UnauthorizedError('Токен не передан');
+    }
+    token = token.replace('Bearer ', '');
+    let payload: JwtPayload | null = null;
+
+    payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    req.user = payload;
+    next();
+  } catch (e) {
+    next(new UnauthorizedError('Необходима авторизация'));
   }
-
-  res.locals.user = payload;
-
-  return next();
 };
 
-export default authMiddleware;
+export default auth;

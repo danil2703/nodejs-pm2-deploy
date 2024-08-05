@@ -1,103 +1,94 @@
-import { NextFunction, Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { constants } from 'http2';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import {
+  Request,
+  Response,
+  NextFunction,
+} from 'express';
 import User from '../models/user';
-import NotFoundError from '../errors/not-found-error';
+import { JWT_SECRET } from '../config';
 import BadRequestError from '../errors/bad-request-error';
+import NotFoundError from '../errors/not-found-error';
 import ConflictError from '../errors/conflict-error';
-import { JWT_SECRET } from '../environments';
 
-const { ValidationError, CastError } = mongoose.Error;
+const login = (req: Request, res: Response, next: NextFunction) => {
+  const { email, password } = req.body;
+  return User.findUserByCredentials(email, password)
+    .then((user) => {
+      const token = jwt.sign({ _id: user._id }, JWT_SECRET);
+      return res
+        .cookie('jwt', token, {
 
-export const getUsers = (req: Request, res: Response, next: NextFunction) => User.find({})
-  .then((users) => res.send(users))
-  .catch(next);
+          maxAge: 3600000,
+          httpOnly: true,
+          sameSite: true,
+        })
+        .send({ token });
+    })
+    .catch(next);
+};
 
-export const getUserById = (req: Request, res: Response, next: NextFunction) => {
-  const { userId } = req.params;
+const createUser = (req: Request, res: Response, next: NextFunction) => {
+  const {
+    name, about, avatar, password, email,
+  } = req.body;
 
-  return User.findById(userId)
-    .orFail(new NotFoundError('Пользователь по указанному _id не найден.'))
-    .then((user) => res.send(user))
+  bcrypt.hash(password, 10)
+    .then((hash) => User.create({
+      name, about, avatar, email, password: hash,
+    }))
+    .then((data) => res.status(201).send(data))
     .catch((err) => {
-      if (err instanceof CastError) {
-        next(new BadRequestError('Передан некорректный id пользователя.'));
+      if (err.name === 'ValidationError') {
+        next(new BadRequestError(err.message));
+      } else if (err.code === 11000) {
+        next(new ConflictError('Пользователь с данным email уже существует'));
       } else {
         next(err);
       }
     });
 };
 
-export const createUser = (req: Request, res: Response, next: NextFunction) => {
-  const {
-    name, about, avatar, email, password,
-  } = req.body;
-
-  return bcrypt.hash(password, 10)
-    .then((hash) => {
-      User.create({
-        name, about, avatar, email, password: hash,
-      }).then((user) => res.status(constants.HTTP_STATUS_CREATED).send(user))
-        .catch((err) => {
-          const coflictMongooseErrorCode = 11000;
-          if (err instanceof ValidationError) {
-            return next(new BadRequestError(err.message));
-          }
-          if (err.code === coflictMongooseErrorCode) {
-            return next(new ConflictError('Данный email адрес уже зарегистрирован.'));
-          }
-          return next(err);
-        });
-    });
+const getUserData = (id: string, res: Response, next: NextFunction) => {
+  User.findById(id)
+    .orFail(() => new NotFoundError('Пользователь по заданному id отсутствует в базе'))
+    .then((users) => res.send(users))
+    .catch(next);
 };
 
-export const updateUserData = (
+const getUser = (req: Request, res: Response, next: NextFunction) => {
+  getUserData(req.params.id, res, next);
+};
+
+const getCurrentUser = (req: Request, res: Response, next: NextFunction) => {
+  getUserData(req.user._id, res, next);
+};
+
+const updateUserData = (req: Request, res: Response, next: NextFunction) => {
+  const { user: { _id }, body } = req;
+  User.findByIdAndUpdate(_id, body, { new: true, runValidators: true })
+    .orFail(() => new NotFoundError('Пользователь по заданному id отсутствует в базе'))
+    .then((user) => res.send(user))
+    .catch(next);
+};
+
+const updateUserInfo = (
   req: Request,
   res: Response,
   next: NextFunction,
-  updateData: Record<string, string>,
-) => {
-  const userId = res.locals.user._id;
+) => updateUserData(req, res, next);
 
-  User.findByIdAndUpdate(userId, updateData, { new: true, runValidators: true })
-    .orFail(new NotFoundError('Пользователь с указанным _id не найден.'))
-    .then((user) => res.send(user))
-    .catch((err) => {
-      if (err instanceof ValidationError) {
-        next(new BadRequestError('Переданы некорректные данные при обновлении профиля.'));
-      } else {
-        next(err);
-      }
-    });
-};
+const updateUserAvatar = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => updateUserData(req, res, next);
 
-export const updateUser = (req: Request, res: Response, next: NextFunction) => {
-  const { name, about } = req.body;
-  updateUserData(req, res, next, { name, about });
-};
-
-export const updateAvatar = (req: Request, res: Response, next: NextFunction) => {
-  const { avatar } = req.body;
-  updateUserData(req, res, next, { avatar });
-};
-
-export const getCurrentUser = (req: Request, res: Response, next: NextFunction) => {
-  const currentUserId = res.locals.user._id;
-
-  return User.findById(currentUserId)
-    .then((user) => res.send(user))
-    .catch(next);
-};
-
-export const login = (req: Request, res: Response, next: NextFunction) => {
-  const { email, password } = req.body;
-  const sevenDay = 3600000 * 24 * 7;
-
-  return User.findUserByCredentials(email, password).then((user) => {
-    const token = jwt.sign({ _id: user._id }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('jwt', token, { maxAge: sevenDay, httpOnly: true }).end();
-  })
-    .catch(next);
+export {
+  login,
+  updateUserInfo,
+  updateUserAvatar,
+  createUser,
+  getUser,
+  getCurrentUser,
 };

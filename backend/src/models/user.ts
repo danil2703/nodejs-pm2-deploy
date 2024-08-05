@@ -1,71 +1,86 @@
-import { Model, Schema, model } from 'mongoose';
-import isEmail from 'validator/lib/isEmail';
-import isURL from 'validator/lib/isURL';
-import bcrypt from 'bcrypt';
+import mongoose, { Model, Document, HydratedDocument } from 'mongoose';
+import validator from 'validator';
+import bcrypt from 'bcryptjs'; // импортируем bcrypt
+import { urlRegExp } from '../middlewares/validatons';
 import UnauthorizedError from '../errors/unauthorized-error';
 
-export interface IUser {
-  _id: string;
-  email: string;
-  password: string;
+interface IUser extends Document {
   name: string;
   about: string;
   avatar: string;
+  email: string;
+  password: string;
 }
 
-interface UserModel extends Model<IUser> {
-  findUserByCredentials(_email: string, _password: string): Promise<IUser>;
+interface IUserMethods {
+  toJSON(): string;
 }
 
-const userSchema = new Schema<IUser, UserModel>({
-  email: {
-    type: String,
-    unique: true,
-    required: [true, 'Поле "email" должно быть заполнено'],
-    validate: {
-      validator: (v: string) => isEmail(v),
-      message: 'Некорректный email',
-    },
-  },
-  password: {
-    type: String,
-    required: [true, 'Поле "password" должно быть заполнено'],
-    minlength: [4, 'Минимальная длина пароля - 4'],
-    select: false,
-  },
+interface IUserModel extends Model<IUser, {}, IUserMethods> {
+  findUserByCredentials: (email: string, password: string) =>
+                             Promise<HydratedDocument<IUser, IUserMethods>>;
+}
+
+const userSchema = new mongoose.Schema<IUser, IUserModel, IUserMethods>({
   name: {
     type: String,
+    default: 'Жак-Ив Кусто',
     minlength: [2, 'Минимальная длина поля "name" - 2'],
     maxlength: [30, 'Максимальная длина поля "name" - 30'],
-    default: 'Жак-Ив Кусто',
   },
   about: {
     type: String,
-    minlength: [2, 'Минимальная длина поля "about" - 2'],
-    maxlength: [200, 'Максимальная длина поля "about" - 30'],
     default: 'Исследователь',
+    minlength: [2, 'Минимальная длина поля "about" - 2'],
+    maxlength: [30, 'Максимальная длина поля "about" - 30'],
   },
   avatar: {
     type: String,
-    validate: {
-      validator: (v: string) => isURL(v),
-      message: 'Некорректный URL',
-    },
     default: 'https://pictures.s3.yandex.net/resources/jacques-cousteau_1604399756.png',
+    validate: {
+      validator: (v: string) => urlRegExp.test(v),
+      message: 'Поле "avatar" должно быть валидным url-адресом.',
+    },
+  },
+  // в схеме пользователя есть обязательные email и password
+  email: {
+    type: String,
+    required: [true, 'Поле "email" должно быть заполнено'],
+    unique: true, // поле email уникально (есть опция unique: true);
+    validate: {
+      validator: (v: string) => validator.isEmail(v),
+      message: 'Поле "email" должно быть валидным email-адресом',
+    },
+  },
+  // поле password не имеет ограничения на длину, т.к. пароль хранится в виде хэша
+  password: {
+    type: String,
+    required: [true, 'Поле "password" должно быть заполнено'],
+    select: false,
   },
 }, { versionKey: false });
 
-userSchema.static('findUserByCredentials', function findUserByCredentials(email: string, password: string) {
-  return this.findOne({ email }).select('+password')
-    .orFail(new UnauthorizedError('Неправильные почта или пароль'))
-    .then((user: IUser) => bcrypt.compare(password, user.password)
-      .then((matched) => {
-        if (!matched) {
+userSchema.statics
+  .findUserByCredentials = function findByCredentials(email: string, password: string) {
+    return this.findOne({ email }).select('+password')
+      .then((user) => {
+        if (!user) {
           return Promise.reject(new UnauthorizedError('Неправильные почта или пароль'));
         }
+        return bcrypt.compare(password, user.password)
+          .then((matched) => {
+            if (!matched) {
+              return Promise.reject(new UnauthorizedError('Неправильные почта или пароль'));
+            }
+            return user;
+          });
+      });
+  };
 
-        return user;
-      }));
-});
+userSchema.methods.toJSON = function toJSON() {
+  const obj = this.toObject();
+  delete obj.password;
+  return obj;
+};
 
-export default model<IUser, UserModel>('user', userSchema);
+export default mongoose.model<IUser, IUserModel>('user', userSchema);

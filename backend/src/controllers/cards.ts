@@ -1,88 +1,64 @@
-import { NextFunction, Request, Response } from 'express';
-import mongoose from 'mongoose';
-import { constants } from 'http2';
-import ForbiddenError from '../errors/forbidden-error';
+import {
+  Request, Response, NextFunction,
+} from 'express';
 import Card from '../models/card';
 import BadRequestError from '../errors/bad-request-error';
 import NotFoundError from '../errors/not-found-error';
+import ForbiddenError from '../errors/forbidden-error';
 
-const { ValidationError, CastError } = mongoose.Error;
+const getCards = (req: Request, res: Response, next: NextFunction) => {
+  Card.find({})
+    .then((cards) => res.send(cards))
+    .catch(next);
+};
 
-export const getCards = (req: Request, res: Response, next: NextFunction) => Card.find({ })
-  .then((cards) => res.send(cards))
-  .catch(next);
-
-export const createCard = (req: Request, res: Response, next: NextFunction) => {
+const createCard = (req: Request, res: Response, next: NextFunction) => {
+  const owner = req.user._id;
   const { name, link } = req.body;
-
-  return Card.create({ name, link, owner: res.locals.user._id })
-    .then((card) => res.status(constants.HTTP_STATUS_CREATED).send(card))
+  Card.create({ name, link, owner })
+    .then((card) => res.status(201).send(card))
     .catch((err) => {
-      if (err instanceof ValidationError) {
-        next(new BadRequestError('Переданы некорректные данные при создании пользователя.'));
+      if (err.name === 'ValidationError') {
+        next(new BadRequestError(err.message));
       } else {
         next(err);
       }
     });
 };
 
-export const deleteCard = (req: Request, res: Response, next: NextFunction) => {
-  const { cardId } = req.params;
-  const currentUserId = res.locals.user._id;
-
-  return Card.findById(cardId)
-    .orFail(new NotFoundError('Карточка с указанным _id не найдена.'))
-    .then(async (card) => {
-      if (currentUserId !== card.owner) {
-        return next(new ForbiddenError('Вы не можете удалить эту карточку.'));
+const deleteCard = (req: Request, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  Card.findById(id)
+    .orFail(() => new NotFoundError('Нет карточки по заданному id'))
+    .then((card) => {
+      if (card.owner.toString() !== req.user._id) {
+        throw new ForbiddenError('Нельзя удалить чужую карточку');
+      } else {
+        return Card.deleteOne({ _id: card._id })
+          .then(() => res.send(card));
       }
-      return Card.findByIdAndDelete(cardId).then(() => res.send(card));
     })
-    .catch((err) => {
-      if (err instanceof CastError) {
-        next(new BadRequestError('Передан некорректный id карточки.'));
-      } else {
-        next(err);
-      }
-    });
+    .catch(next);
 };
 
-export const likeCard = (req: Request, res: Response, next: NextFunction) => {
-  const { cardId } = req.params;
-  const userId = res.locals.user._id;
-
-  return Card.findByIdAndUpdate(
-    cardId,
-    { $addToSet: { likes: userId } },
-    { new: true },
-  )
-    .orFail(new NotFoundError('Передан несуществующий _id карточки.'))
-    .then((card) => res.send(card))
-    .catch((err) => {
-      if (err instanceof CastError) {
-        next(new BadRequestError('Передан некорректный id карточки.'));
-      } else {
-        next(err);
-      }
-    });
+const updateLike = (req: Request, res: Response, next: NextFunction, method: string) => {
+  const { params: { id } } = req;
+  Card.findByIdAndUpdate(id, { [method]: { likes: req.user._id } }, { new: true })
+    .orFail(() => new NotFoundError('Нет карточки по заданному id'))
+    .then((card) => {
+      res.send(card);
+    })
+    .catch(next);
 };
 
-export const dislikeCard = (req: Request, res: Response, next: NextFunction) => {
-  const { cardId } = req.params;
-  const userId = res.locals.user._id;
+const likeCard = (req: Request, res: Response, next: NextFunction) => updateLike(req, res, next, '$addToSet');
 
-  return Card.findByIdAndUpdate(
-    cardId,
-    { $pull: { likes: userId } },
-    { new: true },
-  )
-    .orFail(new NotFoundError('Передан несуществующий _id карточки.'))
-    .then((card) => res.send(card))
-    .catch((err) => {
-      if (err instanceof CastError) {
-        next(new BadRequestError('Передан некорректный id карточки.'));
-      } else {
-        next(err);
-      }
-    });
+const dislikeCard = (req: Request, res: Response, next: NextFunction) => updateLike(req, res, next, '$pull');
+
+export {
+  getCards,
+  createCard,
+  deleteCard,
+  likeCard,
+  dislikeCard,
 };
