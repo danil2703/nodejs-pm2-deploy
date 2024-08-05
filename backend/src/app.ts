@@ -4,7 +4,6 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import { errors } from 'celebrate';
-import cors from 'cors';
 import router from './routes';
 import errorHandler from './middlewares/erorr-handler';
 import { requestLogger, errorLogger } from './middlewares/logger';
@@ -14,7 +13,6 @@ const app = express();
 
 dotenv.config();
 
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(helmet());
